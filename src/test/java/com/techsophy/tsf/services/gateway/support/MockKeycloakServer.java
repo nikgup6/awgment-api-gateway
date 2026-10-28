@@ -1,5 +1,14 @@
 package com.techsophy.tsf.services.gateway.support;
 
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,15 +23,20 @@ import java.util.regex.Pattern;
  * In-process stand-in for Keycloak's OpenID discovery endpoint, shared by the tests so they do not depend on
  * an external Keycloak. Known realms serve the recorded Keycloak 26 document, except "legacy" (no nested
  * objects, as older Keycloak versions publish) and "mismatch" (wrong issuer); any other realm is a 404.
+ * Known realms also publish the public key of {@link #sign(JWTClaimsSet)} on their JWKS endpoint, except "nokeys"
+ * (JWKS endpoint is a 404, as when Keycloak fails after discovery).
  */
 public final class MockKeycloakServer
 {
     public static final String LEGACY_REALM = "legacy";
     public static final String MISMATCH_REALM = "mismatch";
     public static final String MISSING_REALM = "missing";
-    private static final Set<String> KNOWN_REALMS = Set.of("medunited", "techsophy-platform", "KIMS", LEGACY_REALM, MISMATCH_REALM);
+    public static final String NO_KEYS_REALM = "nokeys";
+    private static final Set<String> KNOWN_REALMS = Set.of("medunited", "techsophy-platform", "KIMS", LEGACY_REALM, MISMATCH_REALM, NO_KEYS_REALM);
 
     private static final Pattern DISCOVERY_PATH = Pattern.compile("^/auth/realms/([^/]+)/\\.well-known/openid-configuration$");
+    private static final Pattern CERTS_PATH = Pattern.compile("^/auth/realms/([^/]+)/protocol/openid-connect/certs$");
+    private static final RSAKey SIGNING_KEY = generateKey();
     private static String issuerPrefix;
 
     private MockKeycloakServer()
@@ -51,6 +65,33 @@ public final class MockKeycloakServer
         }
     }
 
+    /** Returns an RS256 token signed with the key every known realm publishes, as Keycloak would issue it. */
+    public static String sign(JWTClaimsSet claims)
+    {
+        try
+        {
+            SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(SIGNING_KEY.getKeyID()).build(), claims);
+            jwt.sign(new RSASSASigner(SIGNING_KEY));
+            return jwt.serialize();
+        }
+        catch (JOSEException e)
+        {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static RSAKey generateKey()
+    {
+        try
+        {
+            return new RSAKeyGenerator(2048).keyID("mock-keycloak").generate();
+        }
+        catch (JOSEException e)
+        {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private static String start()
     {
         try
@@ -59,9 +100,17 @@ public final class MockKeycloakServer
             String prefix = "http://127.0.0.1:" + server.getAddress().getPort() + "/auth/realms/";
             server.createContext("/", exchange -> {
                 Matcher m = DISCOVERY_PATH.matcher(exchange.getRequestURI().getPath());
+                Matcher certs = CERTS_PATH.matcher(exchange.getRequestURI().getPath());
                 String realm = m.matches() ? m.group(1) : MISSING_REALM;
                 byte[] body = new byte[0];
-                if (KNOWN_REALMS.contains(realm))
+                if (certs.matches())
+                {
+                    if (KNOWN_REALMS.contains(certs.group(1)) && !NO_KEYS_REALM.equals(certs.group(1)))
+                    {
+                        body = new JWKSet(SIGNING_KEY.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);
+                    }
+                }
+                else if (KNOWN_REALMS.contains(realm))
                 {
                     String issuer = prefix + (MISMATCH_REALM.equals(realm) ? "someone-else" : realm);
                     String document = keycloak26Document(issuer);

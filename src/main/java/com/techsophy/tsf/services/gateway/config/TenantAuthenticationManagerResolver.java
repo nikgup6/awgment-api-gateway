@@ -1,75 +1,102 @@
 package com.techsophy.tsf.services.gateway.config;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.techsophy.tsf.services.gateway.exception.InvalidInputException;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.JWTParser;
+import com.techsophy.tsf.services.gateway.dto.TenantRegistration;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.NestedExceptionUtils;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.ReactiveAuthenticationManagerResolver;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoders;
+import org.springframework.security.oauth2.server.resource.BearerTokenError;
+import org.springframework.security.oauth2.server.resource.BearerTokenErrorCodes;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtReactiveAuthenticationManager;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+import java.text.ParseException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import static com.techsophy.tsf.services.gateway.constants.GatewayConstants.*;
 
 @Component
+@Slf4j
 public class TenantAuthenticationManagerResolver implements ReactiveAuthenticationManagerResolver<ServerWebExchange> {
-    private final Map<String, ReactiveAuthenticationManager> authenticationManagers = new HashMap<>();
+    private final Map<String, ReactiveAuthenticationManager> authenticationManagers = new ConcurrentHashMap<>();
 
     @Value("${keycloak.issuer-uri}")
     private String keycloakIssuerUri;
 
+    @Autowired
+    private TenantRegistration tenants;
+
     @Override
     public Mono<ReactiveAuthenticationManager> resolve(ServerWebExchange request) {
-        return Mono.just(this.authenticationManagers.computeIfAbsent(toTenant(request), this::fromTenant));
+        String tenant;
+        try {
+            tenant = getIssuerFromToken(request.getRequest().getHeaders().getFirst("Authorization"));
+        } catch (ParseException e) {
+            return Mono.error(bearerTokenException(HttpStatus.FORBIDDEN, MALFORMED_TOKEN));
+        }
+        // same parsing as KeycloakRealmRepository: a single comma separated entry
+        if (!Arrays.asList(tenants.getRegistrations().get(0).split(",")).contains(tenant)) {
+            return Mono.error(bearerTokenException(HttpStatus.UNAUTHORIZED, INVALID_TENANT));
+        }
+        // the realm's OpenID configuration could not be loaded; nothing is cached, so the next request retries
+        return Mono.fromCallable(() -> this.authenticationManagers.computeIfAbsent(tenant, this::fromTenant))
+                .onErrorMap(TenantAuthenticationManagerResolver::keycloakUnavailable);
     }
 
     public static String toTenant(ServerWebExchange request) {
         String stoken = request.getRequest().getHeaders().getFirst("Authorization");
+        if (stoken == null) {
+            return null;
+        }
         try {
             return getIssuerFromToken(stoken);
         } catch (Exception e) {
             e.printStackTrace();
+            return null;
         }
-        return stoken;
     }
 
     private ReactiveAuthenticationManager fromTenant(String tenant) {
-        return (Optional.ofNullable(keycloakIssuerUri + tenant)
-                .map(ReactiveJwtDecoders::fromIssuerLocation)
-                .map(JwtReactiveAuthenticationManager::new)
-                .orElseThrow(() -> new IllegalArgumentException("unknown tenant"))::authenticate);
+        JwtReactiveAuthenticationManager authenticationManager =
+                new JwtReactiveAuthenticationManager(ReactiveJwtDecoders.fromIssuerLocation(keycloakIssuerUri + tenant));
+        // Spring reports every rejected token as 401; claim validation failures (expiry, issuer) stay 401,
+        // structure and signature failures become 403
+        return authentication -> authenticationManager.authenticate(authentication)
+                .onErrorMap(e -> e instanceof InvalidBearerTokenException && !(e.getCause() instanceof JwtValidationException),
+                        e -> bearerTokenException(HttpStatus.FORBIDDEN, INVALID_TOKEN))
+                // the decoder reports a failed signing key (JWKS) fetch as IllegalStateException
+                .onErrorMap(IllegalStateException.class, TenantAuthenticationManagerResolver::keycloakUnavailable);
     }
 
-    public static String getIssuerFromToken(String idToken) throws JsonProcessingException {
-        String tenantName = "";
-        final Base64.Decoder decoder = Base64.getDecoder();
-        if (idToken.startsWith("Bearer ")) {
-            idToken = idToken.substring(7);
-        }
-        Map<String, Object> tokenBody = new HashMap<>();
-        List<String> tokenizer = Arrays.asList(idToken.split("\\."));
-        for (String token : tokenizer) {
-            if (token.equals(tokenizer.get(1))) {
-                tokenBody = string2JSONMap(new String(decoder.decode(token)));
-            }
-        }
-        if (tokenBody == null) {
-            throw new InvalidInputException("Invalid Token");
-        }
-        if (!tokenBody.isEmpty() && tokenBody.containsKey("iss")) {
-            List<String> elements = Arrays.asList(tokenBody.get("iss").toString().split("/"));
-            tenantName = elements.get(elements.size() - 1);
-        }
-        return tenantName;
+    private static OAuth2AuthenticationException bearerTokenException(HttpStatus status, String description) {
+        return new OAuth2AuthenticationException(new BearerTokenError(BearerTokenErrorCodes.INVALID_TOKEN, status, description, null));
     }
 
-    public static Map<String, Object> string2JSONMap(String json) throws JsonProcessingException {
-        ObjectMapper mapper = new ObjectMapper();
-        // convert JSON string to Map
-        return mapper.readValue(json, new TypeReference<>() {
-        });
+    private static ResponseStatusException keycloakUnavailable(Throwable e) {
+        log.error(KEYCLOAK_UNAVAILABLE + ": " + NestedExceptionUtils.getMostSpecificCause(e).getMessage());
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, KEYCLOAK_UNAVAILABLE, e);
+    }
+
+    public static String getIssuerFromToken(String idToken) throws ParseException {
+        if (idToken.regionMatches(true, 0, BEARER, 0, BEARER.length())) {
+            idToken = idToken.substring(BEARER.length());
+        }
+        JWTClaimsSet claims = JWTParser.parse(idToken).getJWTClaimsSet();
+        if (claims == null) {
+            throw new ParseException(MALFORMED_TOKEN, 0);
+        }
+        String issuer = claims.getIssuer();
+        return issuer == null ? "" : issuer.substring(issuer.lastIndexOf('/') + 1);
     }
 }
