@@ -51,7 +51,7 @@ class KeycloakRealmRepositoryTest {
                 .withRegistrationId(TECHSOPHY_PLATFORM)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .clientId(CLIENT_ID)
-                .redirectUriTemplate(TEST_URL + REALMS + TECHSOPHY_PLATFORM)
+                .redirectUri(TEST_URL + REALMS + TECHSOPHY_PLATFORM)
                 .authorizationUri(TEST_URL + REALMS + TECHSOPHY_PLATFORM)
                 .tokenUri(TEST_URL)
                 .build());
@@ -80,7 +80,7 @@ class KeycloakRealmRepositoryTest {
                 .withRegistrationId(TECHSOPHY_PLATFORM)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .clientId(CLIENT_ID)
-                .redirectUriTemplate(TEST_URL + REALMS + TECHSOPHY_PLATFORM)
+                .redirectUri(TEST_URL + REALMS + TECHSOPHY_PLATFORM)
                 .authorizationUri(TEST_URL + REALMS + TECHSOPHY_PLATFORM)
                 .tokenUri(TEST_URL)
                 .build());

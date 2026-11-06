@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springdoc.core.SwaggerUiConfigParameters;
+import org.springdoc.core.properties.SwaggerUiConfigProperties;
 import org.springframework.cloud.gateway.route.RouteDefinition;
 import org.springframework.cloud.gateway.route.RouteDefinitionLocator;
 
@@ -14,7 +14,7 @@ import org.springframework.cloud.gateway.route.RouteDefinitionLocator;
 class GatewayApplicationTest
 {
     @Mock
-    SwaggerUiConfigParameters swaggerUiConfigParameters;
+    SwaggerUiConfigProperties swaggerUiConfigProperties;
     @Mock
     RouteDefinitionLocator routeDefinitionLocator;
     @Mock
@@ -23,6 +23,6 @@ class GatewayApplicationTest
     @Test
     void apisLocatorNullTest()
     {
-        Assertions.assertThrows(InvalidInputException.class,()->GatewayApplication.apis(null,null));
+        Assertions.assertThrows(InvalidInputException.class,()->GatewayApplication.apis(null,null,null));
     }
 }

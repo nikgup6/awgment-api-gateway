@@ -24,7 +24,7 @@ class OidcClientRegistrationsTest
         Assertions.assertEquals(issuer + "/protocol/openid-connect/userinfo", provider.getUserInfoEndpoint().getUri());
         Assertions.assertEquals(issuer, provider.getConfigurationMetadata().get("issuer"));
         Assertions.assertTrue(provider.getConfigurationMetadata().containsKey("mtls_endpoint_aliases"));
-        Assertions.assertEquals(ClientAuthenticationMethod.BASIC, registration.getClientAuthenticationMethod());
+        Assertions.assertEquals(ClientAuthenticationMethod.CLIENT_SECRET_BASIC, registration.getClientAuthenticationMethod());
         Assertions.assertTrue(registration.getScopes().contains("openid"));
     }
 
@@ -36,10 +36,11 @@ class OidcClientRegistrationsTest
         ClientRegistration spring = ClientRegistrations.fromOidcIssuerLocation(issuer).clientId("awgment-api").build();
         Assertions.assertEquals(spring.getRegistrationId(), ours.getRegistrationId());
         Assertions.assertEquals(spring.getClientName(), ours.getClientName());
-        Assertions.assertEquals(spring.getScopes(), ours.getScopes());
+        // Spring Security 6 no longer copies scopes_supported into the registration; ours keeps the previous behaviour
+        Assertions.assertTrue(ours.getScopes().contains("openid"));
         Assertions.assertEquals(spring.getClientAuthenticationMethod(), ours.getClientAuthenticationMethod());
         Assertions.assertEquals(spring.getAuthorizationGrantType(), ours.getAuthorizationGrantType());
-        Assertions.assertEquals(spring.getRedirectUriTemplate(), ours.getRedirectUriTemplate());
+        Assertions.assertEquals(spring.getRedirectUri(), ours.getRedirectUri());
         Assertions.assertEquals(spring.getProviderDetails().getAuthorizationUri(), ours.getProviderDetails().getAuthorizationUri());
         Assertions.assertEquals(spring.getProviderDetails().getTokenUri(), ours.getProviderDetails().getTokenUri());
         Assertions.assertEquals(spring.getProviderDetails().getJwkSetUri(), ours.getProviderDetails().getJwkSetUri());
@@ -49,11 +50,12 @@ class OidcClientRegistrationsTest
     }
 
     @Test
-    void springSecurityStillRejectsKeycloak26Discovery()
+    void springSecurityNowAcceptsKeycloak26Discovery()
     {
-        // Documents why OidcClientRegistrations exists; if this starts passing after an upgrade, it can be removed.
+        // Spring Security 6.5 parses Keycloak 26 discovery itself; OidcClientRegistrations is kept so that
+        // registrations stay identical to the pre-upgrade behaviour (e.g. scopes from scopes_supported).
         String issuer = issuerPrefix() + "medunited";
-        Assertions.assertThrows(IllegalArgumentException.class, () -> ClientRegistrations.fromOidcIssuerLocation(issuer));
+        Assertions.assertDoesNotThrow(() -> ClientRegistrations.fromOidcIssuerLocation(issuer));
     }
 
     @Test

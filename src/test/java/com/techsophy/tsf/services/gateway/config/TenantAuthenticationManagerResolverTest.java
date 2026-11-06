@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -19,7 +20,7 @@ import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
-import org.springframework.security.oauth2.server.resource.BearerTokenAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.BearerTokenError;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -36,7 +37,7 @@ import java.util.List;
 import static com.techsophy.tsf.services.gateway.constants.GatewayConstants.TEST_ACTIVE_PROFILE;
 
 @ActiveProfiles(TEST_ACTIVE_PROFILE)
-@ExtendWith(OutputCaptureExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 @SpringBootTest(properties = {"CORS_ALLOWEDORIGINS=VALUE", "ADD_ALLOWEDMETHOD=VALUE2", "ADD_ALLOWEDHEADER=VALUE3"})
 class TenantAuthenticationManagerResolverTest {
 
@@ -256,7 +257,7 @@ class TenantAuthenticationManagerResolverTest {
     {
         StepVerifier.create(result)
                 .expectErrorSatisfies(e -> Assertions.assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
-                        ((ResponseStatusException) e).getStatus()))
+                        ((ResponseStatusException) e).getStatusCode()))
                 .verify();
     }
 }

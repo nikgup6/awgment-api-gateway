@@ -71,7 +71,7 @@ public final class OidcClientRegistrations
                 .scope(getScopes(metadata))
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .clientAuthenticationMethod(getClientAuthenticationMethod(issuer, metadata))
-                .redirectUriTemplate("{baseUrl}/{action}/oauth2/code/{registrationId}")
+                .redirectUri("{baseUrl}/{action}/oauth2/code/{registrationId}")
                 .authorizationUri(metadata.getAuthorizationEndpointURI().toASCIIString())
                 .providerConfigurationMetadata(configurationMetadata)
                 .tokenUri(metadata.getTokenEndpointURI().toASCIIString())
@@ -89,17 +89,17 @@ public final class OidcClientRegistrations
         List<com.nimbusds.oauth2.sdk.auth.ClientAuthenticationMethod> methods = metadata.getTokenEndpointAuthMethods();
         if (methods == null || methods.contains(com.nimbusds.oauth2.sdk.auth.ClientAuthenticationMethod.CLIENT_SECRET_BASIC))
         {
-            return ClientAuthenticationMethod.BASIC;
+            return ClientAuthenticationMethod.CLIENT_SECRET_BASIC;
         }
         if (methods.contains(com.nimbusds.oauth2.sdk.auth.ClientAuthenticationMethod.CLIENT_SECRET_POST))
         {
-            return ClientAuthenticationMethod.POST;
+            return ClientAuthenticationMethod.CLIENT_SECRET_POST;
         }
         if (methods.contains(com.nimbusds.oauth2.sdk.auth.ClientAuthenticationMethod.NONE))
         {
             return ClientAuthenticationMethod.NONE;
         }
-        throw new IllegalArgumentException("Only ClientAuthenticationMethod.BASIC, ClientAuthenticationMethod.POST and "
+        throw new IllegalArgumentException("Only ClientAuthenticationMethod.CLIENT_SECRET_BASIC, ClientAuthenticationMethod.CLIENT_SECRET_POST and "
                 + "ClientAuthenticationMethod.NONE are supported. The issuer \"" + issuer + "\" returned a configuration of " + methods);
     }
 

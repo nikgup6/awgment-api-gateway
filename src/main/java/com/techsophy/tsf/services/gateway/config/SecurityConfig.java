@@ -16,6 +16,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import org.springframework.web.server.ServerWebExchange;
 import java.util.Collections;
+import java.util.List;
 
 @Configuration
 @EnableWebFluxSecurity
@@ -51,15 +52,31 @@ public class SecurityConfig {
         return requestResolver;
     }
 
+    /**
+     * Spring 5 matched a '**' segment in the middle of a pattern as '*' (exactly one path segment);
+     * Spring 6 rejects such patterns at startup, so they are rewritten to the equivalent '*' form.
+     */
+    static String[] toPathPatterns(List<String> patterns)
+    {
+        return patterns.stream().map(pattern -> {
+            String result = pattern;
+            while (result.contains("/**/"))
+            {
+                result = result.replace("/**/", "/*/");
+            }
+            return result;
+        }).toArray(String[]::new);
+    }
+
     @Bean
     public SecurityWebFilterChain springSecurityFilterChain(
             ServerHttpSecurity http,
             ReactiveAuthenticationManagerResolver<ServerWebExchange> authenticationManagerResolver,
             ReactiveClientRegistrationRepository repository
     ) {
-        String[] res = securityDisableModel.getBaseUrl().toArray(new String[0]);
-        http.csrf().disable();
-        http.cors().configurationSource(corsConfigurationSource());
+        String[] res = toPathPatterns(securityDisableModel.getBaseUrl());
+        http.csrf(ServerHttpSecurity.CsrfSpec::disable);
+        http.cors(cors -> cors.configurationSource(corsConfigurationSource()));
         http.authorizeExchange(exchanges -> exchanges
                 .pathMatchers(res).permitAll()
                 .anyExchange().authenticated())

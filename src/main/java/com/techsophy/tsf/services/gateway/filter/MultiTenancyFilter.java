@@ -41,7 +41,7 @@ public class MultiTenancyFilter implements GlobalFilter
         {
             Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
             logger.info("Request on route {} ({}) has X-Tenant '{}' that is not in tenants.registrations; rejected with 400",
-                    route == null ? "unknown" : route.getId(), exchange.getRequest().getMethodValue(),
+                    route == null ? "unknown" : route.getId(), exchange.getRequest().getMethod().name(),
                     TenantAuthenticationManagerResolver.truncate(tenant));
             return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, INVALID_TENANT));
         }

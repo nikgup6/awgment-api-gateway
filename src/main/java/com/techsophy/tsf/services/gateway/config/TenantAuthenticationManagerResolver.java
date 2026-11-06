@@ -10,6 +10,7 @@ import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.ReactiveAuthenticationManagerResolver;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -53,7 +54,7 @@ public class TenantAuthenticationManagerResolver implements ReactiveAuthenticati
             // the route is not resolved yet at this point; only the path prefix is logged because deeper
             // segments can carry link codes. The realm comes from a token whose signature is not checked yet
             log.info("Bearer token for realm '{}' on {} {} is not in tenants.registrations; rejected with 401",
-                    tenant.isEmpty() ? "(none)" : truncate(tenant), request.getRequest().getMethodValue(), pathPrefix(request));
+                    tenant.isEmpty() ? "(none)" : truncate(tenant), request.getRequest().getMethod().name(), pathPrefix(request));
             return Mono.error(invalidToken(INVALID_TENANT));
         }
         // the realm's OpenID configuration could not be loaded; nothing is cached, so the next request retries
@@ -79,7 +80,7 @@ public class TenantAuthenticationManagerResolver implements ReactiveAuthenticati
         // The request is still routed; the path is not logged because public paths can carry link codes
         Route route = request.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
         log.info("Public request on route {} ({}) has an Authorization header '{}' that is not a Bearer token; tenant not taken from it",
-                route == null ? "unknown" : route.getId(), request.getRequest().getMethodValue(), maskAuthorization(stoken));
+                route == null ? "unknown" : route.getId(), request.getRequest().getMethod().name(), maskAuthorization(stoken));
         return null;
     }
 
@@ -105,9 +106,11 @@ public class TenantAuthenticationManagerResolver implements ReactiveAuthenticati
         JwtReactiveAuthenticationManager authenticationManager =
                 new JwtReactiveAuthenticationManager(ReactiveJwtDecoders.fromIssuerLocation(keycloakIssuerUri + tenant));
         // rejected tokens (signature, expiry, issuer) keep Spring's 401 invalid_token, as RFC 6750 requires;
-        // the decoder reports a failed signing key (JWKS) fetch as IllegalStateException
+        // the decoder reports a failed signing key (JWKS) fetch as IllegalStateException, which Spring Security 6
+        // wraps in AuthenticationServiceException (rejected tokens arrive as InvalidBearerTokenException instead)
         return authentication -> authenticationManager.authenticate(authentication)
-                .onErrorMap(IllegalStateException.class, TenantAuthenticationManagerResolver::keycloakUnavailable);
+                .onErrorMap(e -> e instanceof IllegalStateException || e instanceof AuthenticationServiceException,
+                        TenantAuthenticationManagerResolver::keycloakUnavailable);
     }
 
     static OAuth2AuthenticationException invalidToken(String description) {

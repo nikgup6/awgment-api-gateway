@@ -34,7 +34,7 @@ class MultitenancyFilterTest
         MockServerWebExchange webExchange = MockServerWebExchange
                 .builder(MockServerHttpRequest
                         .get(TEST_URL)
-                        .headers(headers)
+                        .headers(new HttpHeaders(headers))
                         .build())
                 .build();
         GatewayFilterChain gatewayFilterChain = (exchange) -> {
@@ -64,7 +64,7 @@ class MultitenancyFilterTest
         MockServerWebExchange webExchange = MockServerWebExchange
                 .builder(MockServerHttpRequest
                 .get(TEST_URL)
-                        .headers(headers)
+                        .headers(new HttpHeaders(headers))
                         .build())
                 .build();
         GatewayFilterChain gatewayFilterChain = (exchange) -> {
@@ -93,7 +93,7 @@ class MultitenancyFilterTest
         MockServerWebExchange webExchange = MockServerWebExchange
                 .builder(MockServerHttpRequest
                         .get(TEST_URL)
-                        .headers(headers)
+                        .headers(new HttpHeaders(headers))
                         .build())
                 .build();
         GatewayFilterChain gatewayFilterChain = (exchange) -> {
@@ -126,7 +126,7 @@ class MultitenancyFilterTest
             return Mono.empty();
         };
         StepVerifier.create(multiTenancyFilter.filter(webExchange, gatewayFilterChain))
-                .expectErrorSatisfies(e -> Assertions.assertEquals(HttpStatus.BAD_REQUEST, ((ResponseStatusException) e).getStatus()))
+                .expectErrorSatisfies(e -> Assertions.assertEquals(HttpStatus.BAD_REQUEST, ((ResponseStatusException) e).getStatusCode()))
                 .verify();
         Assertions.assertFalse(routed.get());
     }
